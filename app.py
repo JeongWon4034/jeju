@@ -3,8 +3,6 @@ import pandas as pd
 import requests
 import re
 
-from openai import OpenAI
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # CSV 데이터 로드
 data = pd.read_csv("cj_data_final.csv", encoding="cp949").drop_duplicates()
