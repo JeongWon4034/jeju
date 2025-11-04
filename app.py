@@ -411,7 +411,7 @@ div[style*="background-color: #ffffff"]:empty {
 st.markdown('''
 <div class="header-container">
     <img src="https://raw.githubusercontent.com/JeongWon4034/jeju/main/logo_jeju.png" alt='제주온 로고' style="width:125px; height:125px;">
-    <div class="main-title">제주온 - 제주도도 맞춤형 AI기반 스마트 관광 가이드</div>
+    <div class="main-title">제주온 - 제주도 맞춤형 AI기반 스마트 관광 가이드</div>
 </div>
 <div class="title-underline"></div>
 ''', unsafe_allow_html=True)
