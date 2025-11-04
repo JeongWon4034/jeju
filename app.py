@@ -82,7 +82,7 @@ DEFAULTS = {
     "segments": [],
     "duration": 0.0,
     "distance": 0.0,
-    "messages": [{"role": "system", "content": "당신은 청주 문화관광 전문 가이드입니다."}],
+    "messages": [{"role": "system", "content": "당신은 제주 문화관광 전문 가이드입니다."}],
     "auto_gpt_input": ""
 }
 
@@ -94,7 +94,7 @@ for k, v in DEFAULTS.items():
 # ✅ 페이지 설정 & 스타일
 # ──────────────────────────────
 st.set_page_config(
-    page_title="제주온 - 제주도도 맞춤형 AI기반 스마트 관광 가이드",
+    page_title="제주온 - 제주도 맞춤형 AI기반 스마트 관광 가이드",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -410,7 +410,7 @@ div[style*="background-color: #ffffff"]:empty {
 # ✅ 헤더 (GitHub Raw URL로 로고 이미지 로드)
 st.markdown('''
 <div class="header-container">
-    <img src="https://raw.githubusercontent.com/JeongWon4034/jeju/main/logo.png" alt='청풍로드 로고' style="width:125px; height:125px;">
+    <img src="https://raw.githubusercontent.com/JeongWon4034/jeju/main/logo.png" alt='제주주 로고' style="width:125px; height:125px;">
     <div class="main-title">제주온 - 제주도도 맞춤형 AI기반 스마트 관광 가이드</div>
 </div>
 <div class="title-underline"></div>
