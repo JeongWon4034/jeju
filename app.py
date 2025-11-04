@@ -94,7 +94,7 @@ for k, v in DEFAULTS.items():
 # ✅ 페이지 설정 & 스타일
 # ──────────────────────────────
 st.set_page_config(
-    page_title="청풍로드 - 충청북도 맞춤형 AI기반 스마트 관광 가이드",
+    page_title="제주온 - 제주도도 맞춤형 AI기반 스마트 관광 가이드",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -411,7 +411,7 @@ div[style*="background-color: #ffffff"]:empty {
 st.markdown('''
 <div class="header-container">
     <img src="https://raw.githubusercontent.com/JeongWon4034/jeju/main/logo.png" alt='청풍로드 로고' style="width:125px; height:125px;">
-    <div class="main-title">청풍로드 - 충청북도 맞춤형 AI기반 스마트 관광 가이드</div>
+    <div class="main-title">제주온 - 제주도도 맞춤형 AI기반 스마트 관광 가이드</div>
 </div>
 <div class="title-underline"></div>
 ''', unsafe_allow_html=True)
@@ -740,7 +740,7 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
 with st.form("chat_form"):
-    user_input = st.text_input("관광지명을 쉼표로 구분해서 입력하세요", 
+    user_input = st.text_input("관광지명을 쉼표로 구분해서 입력하거나 궁금한 것을 물어보세요 !", 
                              value=st.session_state.get("auto_gpt_input", ""))
     submitted = st.form_submit_button("🔍 관광지 정보 요청")
 
@@ -762,7 +762,7 @@ if submitted and user_input and client is not None:
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": "당신은 청주 지역의 문화 관광지를 간단하게 소개하는 관광 가이드입니다. "},
+                        {"role": "system", "content": "당신은 제주 지역의 관광지 및 카페, 식당을 간단하게 소개하는 관광 가이드입니다. "},
                         {"role": "system", "content": "존댓말을 사용하세요."},
                         {"role": "user", "content": f"{place}를 두 문단 이내로 간단히 설명해주세요."}
                     ]
