@@ -407,13 +407,15 @@ div[style*="background-color: #ffffff"]:empty {
 # ──────────────────────────────
 # ✅ 헤더 (GitHub Raw URL로 로고 이미지 로드)
 # ──────────────────────────────
+# ✅ 헤더 (GitHub Raw URL로 로고 이미지 로드)
 st.markdown('''
 <div class="header-container">
-    <img src="https://raw.githubusercontent.com/JeongWon4034/cheongju/main/cheongpung_logo.png" alt='청풍로드 로고' style ="width:125px; height:125px">
+    <img src="https://raw.githubusercontent.com/JeongWon4034/jeju/main/logo.png" alt='청풍로드 로고' style="width:125px; height:125px;">
     <div class="main-title">청풍로드 - 충청북도 맞춤형 AI기반 스마트 관광 가이드</div>
 </div>
 <div class="title-underline"></div>
 ''', unsafe_allow_html=True)
+
 
 # ──────────────────────────────
 # ✅ 메인 레이아웃 (3컬럼)
