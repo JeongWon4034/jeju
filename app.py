@@ -33,7 +33,12 @@ def load_data():
         cafe = cafe.rename(columns={"X": "lon", "Y": "lat"})
         cafe["type"] = "음식점/카페"
 
-        # 두 데이터 통합
+        
+        # ✅ 관광업 / 음식점·카페 각각 100개만 사용  - 샘플로 너무 많이 하면 시간이 오래 걸림
+        tour = tour.sample(n=min(100, len(tour)), random_state=42)
+        cafe = cafe.sample(n=min(100, len(cafe)), random_state=42)
+
+        # ✅ 두 데이터 통합
         data = pd.concat([tour, cafe], ignore_index=True)
         data = data.drop_duplicates(subset=["사업장명", "lon", "lat"])
 
