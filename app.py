@@ -440,6 +440,25 @@ st.markdown('''
 <div class="title-underline"></div>
 ''', unsafe_allow_html=True)
 
+# ──────────────────────────────
+# 여행 성향 선택하기 
+# ──────────────────────────────
+st.markdown("### ✈️ 여행 성향 선택하기")
+st.write("원하는 여행 분위기나 목적을 선택하세요. AI가 이에 맞는 장소를 추천합니다.")
+
+travel_style = st.multiselect(
+    "여행 키워드 선택 (최대 3개)",
+    ["힐링", "감성", "자연", "체험", "커플", "가족", "액티비티", "사진명소", "카페투어", "맛집탐방"],
+    default=["힐링"]
+)
+
+if travel_style:
+    st.success(f"선택한 여행 성향: {', '.join(travel_style)}")
+else:
+    st.info("여행 성향을 하나 이상 선택해주세요.")
+
+st.markdown("---")
+
 
 # ──────────────────────────────
 # ✅ 메인 레이아웃 (3컬럼)
