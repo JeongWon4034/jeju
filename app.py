@@ -451,10 +451,10 @@ with col1:
     mode = st.radio("", ["운전자", "도보"], horizontal=True, key="mode_key", label_visibility="collapsed")
     
     st.markdown("**출발지**")
-    start = st.selectbox("", gdf["name"].dropna().unique(), key="start_key", label_visibility="collapsed")
+    start = st.selectbox("", gdf["사업장명"].dropna().unique(), key="start_key", label_visibility="collapsed")
     
     st.markdown("**경유지**")
-    wps = st.multiselect("", [n for n in gdf["name"].dropna().unique() if n != st.session_state.get("start_key", "")], key="wps_key", label_visibility="collapsed")
+    wps = st.multiselect("", [n for n in gdf["사업장명"].dropna().unique() if n != st.session_state.get("start_key", "")], key="wps_key", label_visibility="collapsed")
     
     col_btn1, col_btn2 = st.columns(2, gap="small")
     with col_btn1:
