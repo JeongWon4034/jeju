@@ -520,7 +520,7 @@ with col3:
         ctr = boundary.geometry.centroid
         clat, clon = float(ctr.y.mean()), float(ctr.x.mean())
         if math.isnan(clat) or math.isnan(clon):
-            clat, clon = 36.64, 127.48
+            clat, clon = 33.38, 126.53
     except Exception as e:
         st.warning(f"중심점 계산 오류: {str(e)}")
         clat, clon = 36.64, 127.48
