@@ -551,7 +551,7 @@ with col3:
     # 개선된 스냅핑
     try:
         for nm in stops:
-            matching_rows = gdf[gdf["name"] == nm]
+            matching_rows = gdf[gdf["사업장명"] == nm]
             if matching_rows.empty:
                 st.warning(f"⚠️ '{nm}' 정보를 찾을 수 없습니다.")
                 continue
@@ -661,8 +661,8 @@ with col3:
         for _, row in gdf.iterrows():
             if not (pd.isna(row.lat) or pd.isna(row.lon)):
                 folium.Marker([row.lat, row.lon], 
-                            popup=folium.Popup(str(row["name"]), max_width=200),
-                            tooltip=str(row["name"]),
+                            popup=folium.Popup(str(row["사업장명"]), max_width=200),
+                            tooltip=str(row["사업장명"]),
                             icon=folium.Icon(color="gray")).add_to(mc)
         
         current_order = st.session_state.get("order", stops)
