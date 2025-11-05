@@ -18,26 +18,45 @@ MAPBOX_TOKEN = st.secrets["MAPBOX_TOKEN"]
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
 # ──────────────────────────────
-# ✅ 데이터 로드 (안전한 로드)
+# ✅ 데이터 로드 (제주 버전)
 # ──────────────────────────────
 @st.cache_data
 def load_data():
     try:
-        gdf = gpd.read_file("cb_tour.shp").to_crs(epsg=4326)
-        gdf["lon"], gdf["lat"] = gdf.geometry.x, gdf.geometry.y
-        boundary = gpd.read_file("cb_shp.shp").to_crs(epsg=4326)
-        data = pd.read_csv("cj_data_final.csv", encoding="cp949").drop_duplicates()
+        # 관광업 데이터 불러오기
+        tour = pd.read_csv("dataset/관광업_좌표추가.csv", encoding="utf-8")
+        tour = tour.rename(columns={"X": "lon", "Y": "lat"})
+        tour["type"] = "관광업"
+
+        # 음식점/카페 데이터 불러오기
+        cafe = pd.read_csv("dataset/음식점_카페_좌표추가.csv", encoding="utf-8")
+        cafe = cafe.rename(columns={"X": "lon", "Y": "lat"})
+        cafe["type"] = "음식점/카페"
+
+        # 두 데이터 통합
+        data = pd.concat([tour, cafe], ignore_index=True)
+        data = data.drop_duplicates(subset=["사업장명", "lon", "lat"])
+
+        # GeoDataFrame 변환 (shp 대체)
+        from shapely.geometry import Point
+        geometry = [Point(xy) for xy in zip(data["lon"], data["lat"])]
+        gdf = gpd.GeoDataFrame(data, geometry=geometry, crs="EPSG:4326")
+
+        # 제주도 경계 (shp 없이 OpenStreetMap 기반)
+        import osmnx as ox
+        boundary = ox.geocode_to_gdf("Jeju Island, South Korea")
+
         return gdf, boundary, data
     except Exception as e:
         st.error(f"❌ 데이터 로드 실패: {str(e)}")
         return None, None, None
+
 
 gdf, boundary, data = load_data()
 
 # 데이터 로드 실패 시 앱 중단
 if gdf is None:
     st.stop()
-
 # csv 파일에 카페 있을때 출력 / 카페 포맷 함수
 def format_cafes(cafes_df):
     try:
@@ -724,12 +743,16 @@ with col3:
         st.error(f"❌ 지도 렌더링 오류: {str(map_error)}")
         st.markdown('<div class="map-container" style="display: flex; align-items: center; justify-content: center; color: #6b7280;">지도를 불러올 수 없습니다.</div>', unsafe_allow_html=True)
 
+
+
+
+
 # OpenAI 클라이언트 초기화
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ------------------------------
+# -------------------------------------------------------------------------------------------
 # ✅ GPT 가이드
-# ------------------------------
+# ----------------------------------------------------------------------------------------
 st.markdown("---")
 st.markdown('<div class="section-header">🤖 생성형 AI기반 관광 가이드</div>', unsafe_allow_html=True)
 
