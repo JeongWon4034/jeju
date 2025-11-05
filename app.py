@@ -582,7 +582,7 @@ with col3:
         snapped = []
         for nm in stops:
             try:
-                r = gdf[gdf["name"] == nm].iloc[0]
+                r = gdf[gdf["사업장명"] == nm].iloc[0]
                 if not (pd.isna(r.lon) or pd.isna(r.lat)):
                     snapped.append((r.lon, r.lat))
             except Exception as coord_error:
