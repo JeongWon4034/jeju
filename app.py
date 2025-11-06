@@ -36,7 +36,7 @@ def load_data():
         cafe["type"] = "음식점/카페"
 
         # ✅ 자연경관 데이터 추가 (접근성 컬럼 포함)
-        natural = pd.read_csv("dataset/자연경관_좌표추가.csv", encoding="utf-8")
+        natural = pd.read_csv("dataset/자연경관_좌표추가.csv", encoding="cp949").rename(columns={"X": "lon", "Y": "lat"})
         natural = natural.rename(columns={"X": "lon", "Y": "lat"})
         natural["type"] = "자연경관"
 
