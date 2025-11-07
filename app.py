@@ -35,12 +35,9 @@ def load_data():
         cafe = pd.read_csv("dataset/음식점_카페_좌표추가.csv", encoding="utf-8").rename(columns={"X": "lon", "Y": "lat"})
         cafe["type"] = "음식점/카페"
 
-        # ✅ 자연경관 데이터 추가 (접근성 컬럼 포함)
         natural = pd.read_csv("dataset/자연경관_좌표추가.csv", encoding="cp949").rename(columns={"X": "lon", "Y": "lat"})
-        natural = natural.rename(columns={"X": "lon", "Y": "lat"})
         natural["type"] = "자연경관"
 
-        # 필요하면 샘플링 (데이터가 많을 때만)
         if len(tour) > 100:
             tour = tour.sample(n=100, random_state=42)
         if len(cafe) > 100:
@@ -58,10 +55,25 @@ def load_data():
         st.error(f"❌ 데이터 로드 실패: {str(e)}")
         return None, None, None
 
+@st.cache_data
+def load_restaurant_data():
+    try:
+        df = pd.read_csv("final_result.csv", encoding="cp949")
+        return df
+    except:
+        try:
+            df = pd.read_csv("final_result.csv", encoding="utf-8")
+            return df
+        except Exception as e:
+            st.error(f"❌ 맛집 데이터 로드 실패: {str(e)}")
+            return None
+
 gdf, boundary, data = load_data()
+restaurant_df = load_restaurant_data()
 data_loaded = gdf is not None
+
 if not data_loaded:
-    st.warning("⚠️ 관광 데이터 로드에 실패했어요. (지도/경로 기능은 숨기고, AI 추천은 사용 가능합니다.)")
+    st.warning("⚠️ 관광 데이터 로드에 실패했어요.")
 
 # ✅ 카페 포맷 함수
 def format_cafes(cafes_df):
@@ -100,7 +112,8 @@ DEFAULTS = {
     "duration": 0.0,
     "distance": 0.0,
     "messages": [{"role": "system", "content": "당신은 제주 문화관광 전문 가이드입니다."}],
-    "auto_gpt_input": ""
+    "auto_gpt_input": "",
+    "selected_restaurants": []
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -127,15 +140,9 @@ header[data-testid="stHeader"] { display: none; }
 .stMetric { background:linear-gradient(135deg,#a8edea 0%,#fed6e3 100%); border:none; border-radius:12px; padding:16px 10px; text-align:center; transition:.2s; box-shadow:0 2px 4px rgba(168,237,234,.3); }
 .stMetric:hover { transform:translateY(-2px); box-shadow:0 4px 8px rgba(168,237,234,.4); }
 .empty-state { text-align:center; padding:40px 20px; color:#9ca3af; font-style:italic; font-size:.95rem; background:linear-gradient(135deg,#ffecd2 0%,#fcb69f 100%); border-radius:12px; margin:16px 0; }
-
-/* 지도/iframe 여백 제거 */
-div.element-container:has(#main_map),
-div[data-testid="stElement"]:has(#main_map),
-div[data-testid="stComponent"]:has(#main_map) { margin: 0 !important; padding: 0 !important; }
-div[data-testid="stIFrame"]:has(> iframe),
-div[data-testid="stIFrame"] > iframe { margin: 0 !important; padding: 0 !important; border: none !important; }
+div.element-container:has(#main_map), div[data-testid="stElement"]:has(#main_map), div[data-testid="stComponent"]:has(#main_map) { margin: 0 !important; padding: 0 !important; }
+div[data-testid="stIFrame"]:has(> iframe), div[data-testid="stIFrame"] > iframe { margin: 0 !important; padding: 0 !important; border: none !important; }
 #main_map .folium-map, #main_map .leaflet-container { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; }
-
 .block-container { padding-top:1rem; padding-bottom:1rem; max-width:1400px; }
 .stSuccess { background:linear-gradient(135deg,#d4edda 0%,#c3e6cb 100%); border:1px solid #b8dacd; border-radius:8px; color:#155724; }
 .stWarning { background:linear-gradient(135deg,#fff3cd 0%,#ffeaa7 100%); border:1px solid #f8d7da; border-radius:8px; color:#856404; }
@@ -186,24 +193,20 @@ with st.container():
                 rec_df = load_ai_recommendations(url)
                 st.success(f"선택한 성향({', '.join(travel_style)})에 맞는 추천지를 추렸어요 💫")
 
-                # 성향 필터
                 pattern = "|".join(travel_style)
                 filtered = rec_df[rec_df["최고추천성향"].astype(str).str.contains(pattern, na=False)]
 
                 if filtered.empty:
                     st.error("해당 성향에 맞는 추천 결과가 없습니다 😢")
                 else:
-                    # 장소명 컬럼 결정
                     place_col = "관광지명" if "관광지명" in filtered.columns else filtered.columns[0]
 
-                    # 점수 내림차순 → 장소명 중복 제거 → 최대 3개
                     filtered = (
                         filtered.sort_values(by="최고추천점수", ascending=False)
                                 .drop_duplicates(subset=[place_col], keep="first")
                                 .head(3)
                     )
 
-                    # 카드 출력
                     for i, row in enumerate(filtered.to_dict("records"), 1):
                         title = row.get(place_col, "추천지")
                         style = row.get("최고추천성향", "")
@@ -224,7 +227,6 @@ with st.container():
                         """, unsafe_allow_html=True)
             except Exception as e:
                 st.error("❌ 추천 데이터를 불러오는 중 오류가 발생했어요.")
-                st.code(repr(e))
 
 # ✅ 메인 레이아웃
 if data_loaded:
@@ -234,25 +236,32 @@ else:
 
 # ✅ 경로/방문 순서/지도
 if data_loaded:
-    # 좌측: 경로 설정
     with col1:
         st.markdown('<div class="section-header">🚗 추천경로 설정</div>', unsafe_allow_html=True)
         st.markdown("**이동 모드**")
         mode = st.radio("", ["운전자", "도보"], horizontal=True, key="mode_key", label_visibility="collapsed")
+        
+        # 기존 데이터 + 맛집 데이터 통합
+        all_places = list(gdf["사업장명"].dropna().unique())
+        if restaurant_df is not None:
+            tourist_spots = restaurant_df["name_2"].dropna().unique().tolist()
+            all_places = all_places + tourist_spots
+            all_places = sorted(list(set(all_places)))
+        
         st.markdown("**출발지**")
-        start = st.selectbox("", gdf["사업장명"].dropna().unique(), key="start_key", label_visibility="collapsed")
+        start = st.selectbox("", all_places, key="start_key", label_visibility="collapsed")
         st.markdown("**경유지**")
-        wps = st.multiselect("", [n for n in gdf["사업장명"].dropna().unique() if n != st.session_state.get("start_key", "")], key="wps_key", label_visibility="collapsed")
+        wps = st.multiselect("", [n for n in all_places if n != st.session_state.get("start_key", "")], key="wps_key", label_visibility="collapsed")
+        
         c1, c2 = st.columns(2, gap="small")
         with c1:
             create_clicked = st.button("경로 생성")
         with c2:
             clear_clicked = st.button("초기화")
 
-    # 초기화
     if clear_clicked:
         try:
-            for k in ["segments", "order"]:
+            for k in ["segments", "order", "selected_restaurants"]:
                 st.session_state[k] = []
             for k in ["duration", "distance"]:
                 st.session_state[k] = 0.0
@@ -265,7 +274,6 @@ if data_loaded:
         except Exception as e:
             st.error(f"❌ 초기화 중 오류: {str(e)}")
 
-    # 중간: 방문 순서 + 메트릭
     with col2:
         st.markdown('<div class="section-header">📍 여행 방문 순서</div>', unsafe_allow_html=True)
         current_order = st.session_state.get("order", [])
@@ -283,7 +291,6 @@ if data_loaded:
         st.metric("⏱️ 소요시간", f"{st.session_state.get('duration', 0.0):.1f}분")
         st.metric("📏 이동거리", f"{st.session_state.get('distance', 0.0):.2f}km")
 
-    # 우측: 지도
     with col3:
         st.markdown('<div class="section-header">🗺️ 추천경로 지도시각화</div>', unsafe_allow_html=True)
         try:
@@ -291,16 +298,14 @@ if data_loaded:
             clat, clon = float(ctr.y.mean()), float(ctr.x.mean())
             if math.isnan(clat) or math.isnan(clon):
                 clat, clon = 33.38, 126.53
-        except Exception as e:
-            st.warning(f"중심점 계산 오류: {str(e)}")
-            clat, clon = 36.64, 127.48
+        except:
+            clat, clon = 33.38, 126.53
 
         @st.cache_data
         def load_graph(lat, lon):
             try:
                 return ox.graph_from_point((lat, lon), dist=3000, network_type="all")
-            except Exception as e:
-                st.warning(f"도로 네트워크 로드 실패: {str(e)}")
+            except:
                 try:
                     return ox.graph_from_point((36.64, 127.48), dist=3000, network_type="all")
                 except:
@@ -311,43 +316,56 @@ if data_loaded:
         if G is not None:
             try:
                 edges = ox.graph_to_gdfs(G, nodes=False)
-            except Exception as e:
-                st.warning(f"엣지 변환 실패: {str(e)}")
+            except:
+                pass
 
         stops = [start] + wps
         snapped = []
+        selected_restaurants = []
 
         try:
             for nm in stops:
+                # 기존 데이터에서 찾기
                 matching_rows = gdf[gdf["사업장명"] == nm]
-                if matching_rows.empty:
-                    st.warning(f"⚠️ '{nm}' 정보를 찾을 수 없습니다.")
+                
+                if matching_rows.empty and restaurant_df is not None:
+                    # 맛집 데이터에서 관광지 찾기
+                    tourist_rows = restaurant_df[restaurant_df["name_2"] == nm]
+                    if not tourist_rows.empty:
+                        r = tourist_rows.iloc[0]
+                        lon, lat = r["X_2"], r["Y_2"]
+                        # 해당 관광지의 맛집들 저장
+                        restaurants = restaurant_df[restaurant_df["name_2"] == nm][["name_1", "X", "Y", "review", "p_n"]].drop_duplicates()
+                        selected_restaurants.append({
+                            "tourist_spot": nm,
+                            "restaurants": restaurants
+                        })
+                    else:
+                        continue
+                else:
+                    if matching_rows.empty:
+                        continue
+                    r = matching_rows.iloc[0]
+                    lon, lat = r.lon, r.lat
+                
+                if pd.isna(lon) or pd.isna(lat):
                     continue
-                r = matching_rows.iloc[0]
-                if pd.isna(r.lon) or pd.isna(r.lat):
-                    st.warning(f"⚠️ '{nm}'의 좌표 정보가 없습니다.")
-                    continue
-                pt = Point(r.lon, r.lat)
+                    
+                pt = Point(lon, lat)
                 if edges is None or edges.empty:
-                    snapped.append((r.lon, r.lat))
+                    snapped.append((lon, lat))
                     continue
                 edges["d"] = edges.geometry.distance(pt)
                 if edges["d"].empty:
-                    snapped.append((r.lon, r.lat))
+                    snapped.append((lon, lat))
                     continue
                 ln = edges.loc[edges["d"].idxmin()]
                 sp = ln.geometry.interpolate(ln.geometry.project(pt))
                 snapped.append((sp.x, sp.y))
         except Exception as e:
             st.error(f"❌ 지점 처리 중 오류: {str(e)}")
-            snapped = []
-            for nm in stops:
-                try:
-                    r = gdf[gdf["사업장명"] == nm].iloc[0]
-                    if not (pd.isna(r.lon) or pd.isna(r.lat)):
-                        snapped.append((r.lon, r.lat))
-                except Exception as coord_error:
-                    st.warning(f"⚠️ '{nm}' 좌표를 가져올 수 없습니다: {str(coord_error)}")
+
+        st.session_state["selected_restaurants"] = selected_restaurants
 
         if create_clicked and len(snapped) >= 2:
             try:
@@ -368,14 +386,8 @@ if data_loaded:
                                 segs.append(route["geometry"]["coordinates"])
                                 td += route.get("duration", 0)
                                 tl += route.get("distance", 0)
-                            else:
-                                st.warning(f"⚠️ 구간 {i + 1}의 경로를 찾을 수 없습니다.")
-                        else:
-                            st.warning(f"⚠️ API 호출 실패 (상태코드: {r.status_code})")
-                    except requests.exceptions.Timeout:
-                        st.warning("⚠️ API 호출 시간 초과")
-                    except Exception as api_error:
-                        st.warning(f"⚠️ API 호출 오류: {str(api_error)}")
+                    except:
+                        pass
                 if segs:
                     st.session_state["order"] = stops
                     st.session_state["duration"] = td / 60
@@ -383,13 +395,10 @@ if data_loaded:
                     st.session_state["segments"] = segs
                     st.success("✅ 경로가 성공적으로 생성되었습니다!")
                     st.rerun()
-                else:
-                    st.error("❌ 모든 구간의 경로 생성에 실패했습니다.")
             except Exception as e:
                 st.error(f"❌ 경로 생성 중 오류 발생: {str(e)}")
-                st.info("💡 다른 출발지나 경유지를 선택해보세요.")
 
-        # 🔧 지도 렌더링 (여백 없는 버전)
+        # 지도 렌더링
         try:
             m = folium.Map(
                 location=[clat, clon],
@@ -407,7 +416,7 @@ if data_loaded:
 
             mc = MarkerCluster().add_to(m)
 
-            # ✅ 회색 마커: 관광업/카페만 (자연경관은 따로 그립니다)
+            # 기존 데이터 회색 마커
             for _, row in gdf[gdf["type"].isin(["관광업", "음식점/카페"])].iterrows():
                 if not (pd.isna(row.lat) or pd.isna(row.lon)):
                     folium.Marker(
@@ -417,7 +426,7 @@ if data_loaded:
                         icon=folium.Icon(color="gray")
                     ).add_to(mc)
 
-            # ✅ 초록 마커: 자연경관 + 접근성 정보
+            # 자연경관 초록 마커
             try:
                 natural_df = gdf[gdf["type"] == "자연경관"]
                 for _, row in natural_df.iterrows():
@@ -444,10 +453,29 @@ if data_loaded:
                             tooltip=f"🌿 {row['사업장명']}",
                             icon=folium.Icon(color="green", icon="leaf")
                         ).add_to(m)
-            except Exception as e:
-                st.warning(f"자연경관 표시 중 오류: {str(e)}")
+            except:
+                pass
 
-            # 추천 경로 방문 순서 플래그 마커
+            # 선택된 맛집 표시 (주황색 마커)
+            for item in selected_restaurants:
+                restaurants = item["restaurants"]
+                for _, rest in restaurants.iterrows():
+                    if not (pd.isna(rest["X"]) or pd.isna(rest["Y"])):
+                        sentiment = "긍정" if rest["p_n"] == "positive" else "부정" if rest["p_n"] == "negative" else "중립"
+                        popup_html = f"""
+                        <b>🍴 {rest['name_1']}</b><br>
+                        관광지: {item['tourist_spot']}<br>
+                        감정: {sentiment}<br>
+                        리뷰: {rest['review'][:100]}...
+                        """
+                        folium.Marker(
+                            [rest["Y"], rest["X"]],
+                            popup=folium.Popup(popup_html, max_width=300),
+                            tooltip=f"🍴 {rest['name_1']}",
+                            icon=folium.Icon(color="orange", icon="cutlery")
+                        ).add_to(m)
+
+            # 경로 플래그 마커
             current_order = st.session_state.get("order", stops)
             for idx, (x, y) in enumerate(snapped, 1):
                 place_name = current_order[idx - 1] if idx <= len(current_order) else f"지점 {idx}"
@@ -458,7 +486,7 @@ if data_loaded:
                     popup=folium.Popup(f"<b>{idx}. {place_name}</b>", max_width=200)
                 ).add_to(m)
 
-            # 경로선 시각화
+            # 경로선
             if st.session_state.get("segments"):
                 palette = ["#4285f4", "#34a853", "#ea4335", "#fbbc04", "#9c27b0", "#ff9800"]
                 segments = st.session_state["segments"]
@@ -503,12 +531,10 @@ if data_loaded:
                 m.location = [clat, clon]
                 m.zoom_start = 12
 
-            # 지도 출력
             st_folium(m, key="main_map", width=None, height=520, returned_objects=[], use_container_width=True)
 
         except Exception as map_error:
             st.error(f"❌ 지도 렌더링 오류: {str(map_error)}")
-            st.info("지도를 불러올 수 없습니다.")
 
 # ✅ OpenAI 클라이언트
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -537,7 +563,7 @@ if submitted and user_input and client is not None:
         for place in st.session_state["order"][:3]:
             try:
                 matched = data[data['t_name'].str.contains(place, na=False)]
-            except Exception:
+            except:
                 matched = pd.DataFrame()
 
             # GPT 소개
@@ -552,7 +578,7 @@ if submitted and user_input and client is not None:
                 )
                 gpt_intro = response.choices[0].message.content
             except Exception as e:
-                gpt_intro = f"❌ GPT 호출 실패: {place} 소개를 불러올 수 없어요. (오류: {str(e)})"
+                gpt_intro = f"❌ GPT 호출 실패: {place} 소개를 불러올 수 없어요."
 
             score_text = ""; review_block = ""; cafe_info = ""
             if not matched.empty:
@@ -565,18 +591,40 @@ if submitted and user_input and client is not None:
                         review_block = "\n".join([f'"{r}"' for r in reviews[:3]])
                     cafes = matched[['c_name', 'c_value', 'c_review']].drop_duplicates()
                     cafe_info = format_cafes(cafes)
-                except Exception:
+                except:
                     cafe_info = "데이터 처리 중 오류가 발생했습니다."
             else:
-                cafe_info = ("현재 이 관광지 주변에 등록된 카페 정보는 없어요. \n"
-                             "하지만 근처에 숨겨진 보석 같은 공간이 있을 수 있으니, \n"
-                             "지도를 활용해 천천히 걸어보시는 것도 추천드립니다 😊")
+                cafe_info = ""
+
+            # 맛집 정보 추가
+            restaurant_info = ""
+            if restaurant_df is not None:
+                rest_matched = restaurant_df[restaurant_df["name_2"] == place]
+                if not rest_matched.empty:
+                    restaurant_info = "#### 🍴 주변 맛집 추천\n\n"
+                    rest_grouped = rest_matched.groupby("name_1")
+                    for name, group in list(rest_grouped)[:5]:
+                        reviews = group["review"].dropna().tolist()
+                        sentiments = group["p_n"].value_counts()
+                        positive_cnt = sentiments.get("positive", 0)
+                        negative_cnt = sentiments.get("negative", 0)
+                        sentiment_text = f"긍정 {positive_cnt}개" if positive_cnt > 0 else ""
+                        if negative_cnt > 0:
+                            sentiment_text += f", 부정 {negative_cnt}개" if sentiment_text else f"부정 {negative_cnt}개"
+                        
+                        restaurant_info += f"**{name}** ({sentiment_text})\n\n"
+                        if reviews:
+                            for rev in reviews[:2]:
+                                restaurant_info += f"- \"{rev}\"\n"
+                        restaurant_info += "\n"
 
             st.markdown(f"### 🏛️ {place}")
             if score_text:
                 st.markdown(score_text)
             st.markdown("#### ✨ 소개")
             st.markdown(gpt_intro.strip())
+            if restaurant_info:
+                st.markdown(restaurant_info.strip())
             if cafe_info:
                 st.markdown("#### 🧋 주변 카페 추천")
                 st.markdown(cafe_info.strip())
