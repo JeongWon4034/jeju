@@ -65,7 +65,7 @@ def load_restaurant_data():
             df = pd.read_csv("final_result.csv", encoding="utf-8")
             return df
         except Exception as e:
-            st.error(f"❌ 맛집 데이터 로드 실패: {str(e)}")
+            st.warning(f"⚠️ 맛집 데이터 로드 실패: {str(e)}")
             return None
 
 gdf, boundary, data = load_data()
@@ -113,7 +113,8 @@ DEFAULTS = {
     "distance": 0.0,
     "messages": [{"role": "system", "content": "당신은 제주 문화관광 전문 가이드입니다."}],
     "auto_gpt_input": "",
-    "selected_restaurants": []
+    "selected_restaurants": [],
+    "selected_tourist_spots": []
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -241,17 +242,21 @@ if data_loaded:
         st.markdown("**이동 모드**")
         mode = st.radio("", ["운전자", "도보"], horizontal=True, key="mode_key", label_visibility="collapsed")
         
-        # 기존 데이터 + 맛집 데이터 통합
-        all_places = list(gdf["사업장명"].dropna().unique())
-        if restaurant_df is not None:
-            tourist_spots = restaurant_df["name_2"].dropna().unique().tolist()
-            all_places = all_places + tourist_spots
-            all_places = sorted(list(set(all_places)))
-        
         st.markdown("**출발지**")
-        start = st.selectbox("", all_places, key="start_key", label_visibility="collapsed")
+        start_options = list(gdf["사업장명"].dropna().unique())
+        start = st.selectbox("", start_options, key="start_key", label_visibility="collapsed")
+        
         st.markdown("**경유지**")
-        wps = st.multiselect("", [n for n in all_places if n != st.session_state.get("start_key", "")], key="wps_key", label_visibility="collapsed")
+        waypoint_options = [n for n in start_options if n != st.session_state.get("start_key", "")]
+        wps = st.multiselect("", waypoint_options, key="wps_key", label_visibility="collapsed")
+        
+        # 맛집 데이터 관광지 선택 UI
+        if restaurant_df is not None:
+            st.markdown("---")
+            st.markdown("**🍴 맛집 정보를 보고싶은 관광지**")
+            tourist_spots = sorted(restaurant_df["name_2"].dropna().unique().tolist())
+            selected_spots = st.multiselect("관광지를 선택하면 주변 맛집이 지도에 표시됩니다", tourist_spots, key="tourist_spots_key")
+            st.session_state["selected_tourist_spots"] = selected_spots
         
         c1, c2 = st.columns(2, gap="small")
         with c1:
@@ -261,12 +266,12 @@ if data_loaded:
 
     if clear_clicked:
         try:
-            for k in ["segments", "order", "selected_restaurants"]:
+            for k in ["segments", "order", "selected_restaurants", "selected_tourist_spots"]:
                 st.session_state[k] = []
             for k in ["duration", "distance"]:
                 st.session_state[k] = 0.0
             st.session_state["auto_gpt_input"] = ""
-            for widget_key in ["mode_key", "start_key", "wps_key"]:
+            for widget_key in ["mode_key", "start_key", "wps_key", "tourist_spots_key"]:
                 if widget_key in st.session_state:
                     del st.session_state[widget_key]
             st.success("✅ 초기화가 완료되었습니다.")
@@ -321,51 +326,28 @@ if data_loaded:
 
         stops = [start] + wps
         snapped = []
-        selected_restaurants = []
 
         try:
             for nm in stops:
-                # 기존 데이터에서 찾기
                 matching_rows = gdf[gdf["사업장명"] == nm]
-                
-                if matching_rows.empty and restaurant_df is not None:
-                    # 맛집 데이터에서 관광지 찾기
-                    tourist_rows = restaurant_df[restaurant_df["name_2"] == nm]
-                    if not tourist_rows.empty:
-                        r = tourist_rows.iloc[0]
-                        lon, lat = r["X_2"], r["Y_2"]
-                        # 해당 관광지의 맛집들 저장
-                        restaurants = restaurant_df[restaurant_df["name_2"] == nm][["name_1", "X", "Y", "review", "p_n"]].drop_duplicates()
-                        selected_restaurants.append({
-                            "tourist_spot": nm,
-                            "restaurants": restaurants
-                        })
-                    else:
-                        continue
-                else:
-                    if matching_rows.empty:
-                        continue
-                    r = matching_rows.iloc[0]
-                    lon, lat = r.lon, r.lat
-                
-                if pd.isna(lon) or pd.isna(lat):
+                if matching_rows.empty:
                     continue
-                    
-                pt = Point(lon, lat)
+                r = matching_rows.iloc[0]
+                if pd.isna(r.lon) or pd.isna(r.lat):
+                    continue
+                pt = Point(r.lon, r.lat)
                 if edges is None or edges.empty:
-                    snapped.append((lon, lat))
+                    snapped.append((r.lon, r.lat))
                     continue
                 edges["d"] = edges.geometry.distance(pt)
                 if edges["d"].empty:
-                    snapped.append((lon, lat))
+                    snapped.append((r.lon, r.lat))
                     continue
                 ln = edges.loc[edges["d"].idxmin()]
                 sp = ln.geometry.interpolate(ln.geometry.project(pt))
                 snapped.append((sp.x, sp.y))
         except Exception as e:
             st.error(f"❌ 지점 처리 중 오류: {str(e)}")
-
-        st.session_state["selected_restaurants"] = selected_restaurants
 
         if create_clicked and len(snapped) >= 2:
             try:
@@ -416,14 +398,14 @@ if data_loaded:
 
             mc = MarkerCluster().add_to(m)
 
-            # 기존 데이터 회색 마커
+            # 기존 데이터 회색 마커 (백그라운드)
             for _, row in gdf[gdf["type"].isin(["관광업", "음식점/카페"])].iterrows():
                 if not (pd.isna(row.lat) or pd.isna(row.lon)):
                     folium.Marker(
                         [row.lat, row.lon],
                         popup=folium.Popup(str(row["사업장명"]), max_width=200),
                         tooltip=str(row["사업장명"]),
-                        icon=folium.Icon(color="gray")
+                        icon=folium.Icon(color="gray", icon="info-sign")
                     ).add_to(mc)
 
             # 자연경관 초록 마커
@@ -456,26 +438,42 @@ if data_loaded:
             except:
                 pass
 
-            # 선택된 맛집 표시 (주황색 마커)
-            for item in selected_restaurants:
-                restaurants = item["restaurants"]
-                for _, rest in restaurants.iterrows():
-                    if not (pd.isna(rest["X"]) or pd.isna(rest["Y"])):
-                        sentiment = "긍정" if rest["p_n"] == "positive" else "부정" if rest["p_n"] == "negative" else "중립"
-                        popup_html = f"""
-                        <b>🍴 {rest['name_1']}</b><br>
-                        관광지: {item['tourist_spot']}<br>
-                        감정: {sentiment}<br>
-                        리뷰: {rest['review'][:100]}...
-                        """
-                        folium.Marker(
-                            [rest["Y"], rest["X"]],
-                            popup=folium.Popup(popup_html, max_width=300),
-                            tooltip=f"🍴 {rest['name_1']}",
-                            icon=folium.Icon(color="orange", icon="cutlery")
-                        ).add_to(m)
+            # 선택된 관광지와 주변 맛집 표시
+            if restaurant_df is not None:
+                selected_spots = st.session_state.get("selected_tourist_spots", [])
+                for spot in selected_spots:
+                    # 관광지 마커 (파란색)
+                    spot_data = restaurant_df[restaurant_df["name_2"] == spot]
+                    if not spot_data.empty:
+                        spot_row = spot_data.iloc[0]
+                        if not (pd.isna(spot_row["X_2"]) or pd.isna(spot_row["Y_2"])):
+                            folium.Marker(
+                                [spot_row["Y_2"], spot_row["X_2"]],
+                                popup=folium.Popup(f"<b>🏛️ {spot}</b><br>관광지", max_width=200),
+                                tooltip=f"🏛️ {spot}",
+                                icon=folium.Icon(color="blue", icon="star")
+                            ).add_to(m)
+                        
+                        # 주변 맛집 마커 (주황색)
+                        restaurants = spot_data[["name_1", "X", "Y", "review", "p_n"]].drop_duplicates()
+                        for _, rest in restaurants.iterrows():
+                            if not (pd.isna(rest["X"]) or pd.isna(rest["Y"])):
+                                sentiment = "긍정😊" if rest["p_n"] == "positive" else "부정😞" if rest["p_n"] == "negative" else "중립😐"
+                                review_text = str(rest['review'])[:80] + "..." if len(str(rest['review'])) > 80 else str(rest['review'])
+                                popup_html = f"""
+                                <b>🍴 {rest['name_1']}</b><br>
+                                <b>관광지:</b> {spot}<br>
+                                <b>감정:</b> {sentiment}<br>
+                                <b>리뷰:</b> {review_text}
+                                """
+                                folium.Marker(
+                                    [rest["Y"], rest["X"]],
+                                    popup=folium.Popup(popup_html, max_width=300),
+                                    tooltip=f"🍴 {rest['name_1']}",
+                                    icon=folium.Icon(color="orange", icon="cutlery")
+                                ).add_to(m)
 
-            # 경로 플래그 마커
+            # 경로 플래그 마커 (빨간색)
             current_order = st.session_state.get("order", stops)
             for idx, (x, y) in enumerate(snapped, 1):
                 place_name = current_order[idx - 1] if idx <= len(current_order) else f"지점 {idx}"
@@ -592,9 +590,7 @@ if submitted and user_input and client is not None:
                     cafes = matched[['c_name', 'c_value', 'c_review']].drop_duplicates()
                     cafe_info = format_cafes(cafes)
                 except:
-                    cafe_info = "데이터 처리 중 오류가 발생했습니다."
-            else:
-                cafe_info = ""
+                    cafe_info = ""
 
             # 맛집 정보 추가
             restaurant_info = ""
