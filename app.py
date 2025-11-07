@@ -13,6 +13,7 @@ import math
 import os
 from urllib.parse import quote
 import io
+from itertools import permutations
 
 # ✅ 페이지 설정
 st.set_page_config(
@@ -104,6 +105,123 @@ def format_cafes(cafes_df):
             return "\n\n".join(lines)
     except Exception as e:
         return f"카페 정보 처리 중 오류가 발생했습니다: {str(e)}"
+
+# ✅ 좌표 가져오기 함수
+def get_coordinates(place_name):
+    """장소명으로 좌표 가져오기"""
+    # 기존 데이터에서 찾기
+    matching_rows = gdf[gdf["사업장명"] == place_name]
+    if not matching_rows.empty:
+        r = matching_rows.iloc[0]
+        return (r.lon, r.lat)
+    
+    # restaurant_df에서 찾기
+    if restaurant_df is not None:
+        tourist_rows = restaurant_df[restaurant_df["name_2"] == place_name]
+        if not tourist_rows.empty:
+            r = tourist_rows.iloc[0]
+            return (r["X_2"], r["Y_2"])
+    
+    return None
+
+# ✅ 최단거리 경로 계산 함수
+def calculate_shortest_route(start, waypoints, mode="driving"):
+    """최단거리 기준으로 경로 최적화"""
+    if not waypoints:
+        return [start], [], 0.0, 0.0
+    
+    # 모든 지점의 좌표 가져오기
+    all_places = [start] + waypoints
+    coords_dict = {}
+    for place in all_places:
+        coord = get_coordinates(place)
+        if coord and not (pd.isna(coord[0]) or pd.isna(coord[1])):
+            coords_dict[place] = coord
+    
+    if len(coords_dict) < 2:
+        return [start], [], 0.0, 0.0
+    
+    # 출발지 좌표
+    start_coord = coords_dict.get(start)
+    if not start_coord:
+        return [start], [], 0.0, 0.0
+    
+    # 경유지만 추출
+    valid_waypoints = [w for w in waypoints if w in coords_dict]
+    
+    if not valid_waypoints:
+        return [start], [], 0.0, 0.0
+    
+    # 경유지가 5개 이하면 모든 순열 시도, 많으면 그리디 알고리즘
+    if len(valid_waypoints) <= 5:
+        best_order = None
+        best_distance = float('inf')
+        
+        for perm in permutations(valid_waypoints):
+            total_dist = 0
+            current = start_coord
+            
+            for place in perm:
+                next_coord = coords_dict[place]
+                dist = math.sqrt((current[0] - next_coord[0])**2 + (current[1] - next_coord[1])**2)
+                total_dist += dist
+                current = next_coord
+            
+            if total_dist < best_distance:
+                best_distance = total_dist
+                best_order = list(perm)
+        
+        optimized_waypoints = best_order
+    else:
+        # 그리디 알고리즘: 가장 가까운 지점부터 방문
+        remaining = valid_waypoints.copy()
+        optimized_waypoints = []
+        current = start_coord
+        
+        while remaining:
+            nearest = min(remaining, key=lambda p: math.sqrt(
+                (current[0] - coords_dict[p][0])**2 + 
+                (current[1] - coords_dict[p][1])**2
+            ))
+            optimized_waypoints.append(nearest)
+            current = coords_dict[nearest]
+            remaining.remove(nearest)
+    
+    # 최적화된 순서로 경로 계산
+    final_order = [start] + optimized_waypoints
+    segments = []
+    total_duration = 0.0
+    total_distance = 0.0
+    
+    api_mode = "walking" if mode == "도보" else "driving"
+    
+    for i in range(len(final_order) - 1):
+        coord1 = coords_dict[final_order[i]]
+        coord2 = coords_dict[final_order[i + 1]]
+        
+        coord_str = f"{coord1[0]},{coord1[1]};{coord2[0]},{coord2[1]}"
+        url = f"https://api.mapbox.com/directions/v5/mapbox/{api_mode}/{coord_str}"
+        params = {"geometries": "geojson", "overview": "full", "access_token": MAPBOX_TOKEN}
+        
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code == 200:
+                data_resp = r.json()
+                if data_resp.get("routes"):
+                    route = data_resp["routes"][0]
+                    segments.append(route["geometry"]["coordinates"])
+                    total_duration += route.get("duration", 0)
+                    total_distance += route.get("distance", 0)
+                else:
+                    # API 실패시 직선 거리로 대체
+                    segments.append([[coord1[0], coord1[1]], [coord2[0], coord2[1]]])
+            else:
+                segments.append([[coord1[0], coord1[1]], [coord2[0], coord2[1]]])
+        except Exception as e:
+            st.warning(f"경로 계산 중 오류: {str(e)}")
+            segments.append([[coord1[0], coord1[1]], [coord2[0], coord2[1]]])
+    
+    return final_order, segments, total_duration / 60, total_distance / 1000
 
 # ✅ Session 초기화
 DEFAULTS = {
@@ -275,6 +393,29 @@ if data_loaded:
         except Exception as e:
             st.error(f"❌ 초기화 중 오류: {str(e)}")
 
+    if create_clicked:
+        with st.spinner("최단거리 경로를 계산하고 있습니다..."):
+            final_order, segments, duration, distance = calculate_shortest_route(start, wps, mode)
+            
+            if segments:
+                st.session_state["order"] = final_order
+                st.session_state["segments"] = segments
+                st.session_state["duration"] = duration
+                st.session_state["distance"] = distance
+                
+                # 맛집 관광지 리스트 저장
+                selected_restaurant_spots = []
+                for place in final_order:
+                    if restaurant_df is not None:
+                        if place in restaurant_df["name_2"].values:
+                            selected_restaurant_spots.append(place)
+                st.session_state["selected_restaurants"] = selected_restaurant_spots
+                
+                st.success("✅ 최단거리 경로가 생성되었습니다!")
+                st.rerun()
+            else:
+                st.error("❌ 경로 생성에 실패했습니다. 다른 장소를 선택해주세요.")
+
     with col2:
         st.markdown('<div class="section-header">📍 여행 방문 순서</div>', unsafe_allow_html=True)
         current_order = st.session_state.get("order", [])
@@ -302,103 +443,11 @@ if data_loaded:
         except:
             clat, clon = 33.38, 126.53
 
-        @st.cache_data
-        def load_graph(lat, lon):
-            try:
-                return ox.graph_from_point((lat, lon), dist=3000, network_type="all")
-            except:
-                try:
-                    return ox.graph_from_point((36.64, 127.48), dist=3000, network_type="all")
-                except:
-                    return None
-
-        G = load_graph(clat, clon)
-        edges = None
-        if G is not None:
-            try:
-                edges = ox.graph_to_gdfs(G, nodes=False)
-            except:
-                pass
-
-        stops = [start] + wps
-        snapped = []
-        selected_restaurant_spots = []
-
-        try:
-            for nm in stops:
-                # 기존 데이터에서 먼저 찾기
-                matching_rows = gdf[gdf["사업장명"] == nm]
-                
-                if matching_rows.empty and restaurant_df is not None:
-                    # final_result의 name_2에서 찾기
-                    tourist_rows = restaurant_df[restaurant_df["name_2"] == nm]
-                    if not tourist_rows.empty:
-                        r = tourist_rows.iloc[0]
-                        lon, lat = r["X_2"], r["Y_2"]
-                        selected_restaurant_spots.append(nm)
-                    else:
-                        continue
-                else:
-                    if matching_rows.empty:
-                        continue
-                    r = matching_rows.iloc[0]
-                    lon, lat = r.lon, r.lat
-                
-                if pd.isna(lon) or pd.isna(lat):
-                    continue
-                    
-                pt = Point(lon, lat)
-                if edges is None or edges.empty:
-                    snapped.append((lon, lat))
-                    continue
-                edges["d"] = edges.geometry.distance(pt)
-                if edges["d"].empty:
-                    snapped.append((lon, lat))
-                    continue
-                ln = edges.loc[edges["d"].idxmin()]
-                sp = ln.geometry.interpolate(ln.geometry.project(pt))
-                snapped.append((sp.x, sp.y))
-        except Exception as e:
-            st.error(f"❌ 지점 처리 중 오류: {str(e)}")
-
-        st.session_state["selected_restaurants"] = selected_restaurant_spots
-
-        if create_clicked and len(snapped) >= 2:
-            try:
-                segs, td, tl = [], 0.0, 0.0
-                api_mode = "walking" if mode == "도보" else "driving"
-                for i in range(len(snapped) - 1):
-                    x1, y1 = snapped[i]
-                    x2, y2 = snapped[i + 1]
-                    coord = f"{x1},{y1};{x2},{y2}"
-                    url = f"https://api.mapbox.com/directions/v5/mapbox/{api_mode}/{coord}"
-                    params = {"geometries": "geojson", "overview": "full", "access_token": MAPBOX_TOKEN}
-                    try:
-                        r = requests.get(url, params=params, timeout=10)
-                        if r.status_code == 200:
-                            data_resp = r.json()
-                            if data_resp.get("routes"):
-                                route = data_resp["routes"][0]
-                                segs.append(route["geometry"]["coordinates"])
-                                td += route.get("duration", 0)
-                                tl += route.get("distance", 0)
-                    except:
-                        pass
-                if segs:
-                    st.session_state["order"] = stops
-                    st.session_state["duration"] = td / 60
-                    st.session_state["distance"] = tl / 1000
-                    st.session_state["segments"] = segs
-                    st.success("✅ 경로가 성공적으로 생성되었습니다!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"❌ 경로 생성 중 오류 발생: {str(e)}")
-
         # 지도 렌더링
         try:
             m = folium.Map(
                 location=[clat, clon],
-                zoom_start=12,
+                zoom_start=11,
                 tiles="CartoDB Positron",
                 prefer_canvas=True,
                 control_scale=True
@@ -453,6 +502,7 @@ if data_loaded:
                 pass
 
             # 선택된 관광지와 주변 맛집 표시
+            selected_restaurant_spots = st.session_state.get("selected_restaurants", [])
             if restaurant_df is not None and selected_restaurant_spots:
                 for spot in selected_restaurant_spots:
                     spot_data = restaurant_df[restaurant_df["name_2"] == spot]
@@ -486,61 +536,63 @@ if data_loaded:
                                     icon=folium.Icon(color="orange", icon="cutlery")
                                 ).add_to(m)
 
-            # 경로 플래그 마커 (빨간색)
-            current_order = st.session_state.get("order", stops)
-            for idx, (x, y) in enumerate(snapped, 1):
-                place_name = current_order[idx - 1] if idx <= len(current_order) else f"지점 {idx}"
-                folium.Marker(
-                    [y, x],
-                    icon=folium.Icon(color="red", icon="flag"),
-                    tooltip=f"{idx}. {place_name}",
-                    popup=folium.Popup(f"<b>{idx}. {place_name}</b>", max_width=200)
-                ).add_to(m)
-
-            # 경로선
+            # 경로선 그리기 (각 구간별로 다른 색상)
             if st.session_state.get("segments"):
-                palette = ["#4285f4", "#34a853", "#ea4335", "#fbbc04", "#9c27b0", "#ff9800"]
+                palette = ["#4285f4", "#34a853", "#ea4335", "#fbbc04", "#9c27b0", "#ff9800", "#00bcd4", "#ff5722"]
                 segments = st.session_state["segments"]
-                used_positions = []
-                min_distance = 0.001
+                current_order = st.session_state.get("order", [])
+                
                 for i, seg in enumerate(segments):
-                    if seg:
+                    if seg and len(seg) > 0:
+                        # 경로선 그리기
                         folium.PolyLine(
                             [(pt[1], pt[0]) for pt in seg],
                             color=palette[i % len(palette)],
-                            weight=5,
+                            weight=6,
                             opacity=0.8
                         ).add_to(m)
-                        mid = seg[len(seg) // 2]
-                        candidate_pos = [mid[1], mid[0]]
-                        while any(
-                            abs(candidate_pos[0] - u[0]) < min_distance and abs(candidate_pos[1] - u[1]) < min_distance
-                            for u in used_positions
-                        ):
-                            candidate_pos[0] += min_distance * 0.5
-                            candidate_pos[1] += min_distance * 0.5
+                        
+                        # 구간 번호 표시
+                        mid_idx = len(seg) // 2
+                        mid = seg[mid_idx]
                         folium.map.Marker(
-                            candidate_pos,
+                            [mid[1], mid[0]],
                             icon=DivIcon(
                                 html=f"<div style='background:{palette[i % len(palette)]};"
-                                     "color:#fff;border-radius:50%;width:28px;height:28px;"
-                                     "line-height:28px;text-align:center;font-weight:600;"
-                                     "box-shadow:0 2px 4px rgba(0,0,0,0.3);'>"
+                                     "color:#fff;border-radius:50%;width:32px;height:32px;"
+                                     "line-height:32px;text-align:center;font-weight:700;font-size:14px;"
+                                     "box-shadow:0 2px 6px rgba(0,0,0,0.4);'>"
                                      f"{i + 1}</div>"
                             )
                         ).add_to(m)
-                        used_positions.append(candidate_pos)
+                
+                # 경로 플래그 마커 (빨간색)
+                for idx, place_name in enumerate(current_order, 1):
+                    coord = get_coordinates(place_name)
+                    if coord and not (pd.isna(coord[0]) or pd.isna(coord[1])):
+                        folium.Marker(
+                            [coord[1], coord[0]],
+                            icon=folium.Icon(color="red", icon="flag"),
+                            tooltip=f"{idx}. {place_name}",
+                            popup=folium.Popup(f"<b>{idx}. {place_name}</b>", max_width=200)
+                        ).add_to(m)
+                
+                # 지도 범위 조정
                 try:
-                    pts = [pt for seg in segments for pt in seg if seg]
-                    if pts:
-                        m.fit_bounds([[min(p[1] for p in pts), min(p[0] for p in pts)],
-                                      [max(p[1] for p in pts), max(p[0] for p in pts)]])
+                    all_coords = []
+                    for place in current_order:
+                        coord = get_coordinates(place)
+                        if coord and not (pd.isna(coord[0]) or pd.isna(coord[1])):
+                            all_coords.append([coord[1], coord[0]])
+                    
+                    if all_coords:
+                        m.fit_bounds(all_coords, padding=[50, 50])
                 except:
                     m.location = [clat, clon]
-                    m.zoom_start = 12
+                    m.zoom_start = 11
             else:
                 m.location = [clat, clon]
-                m.zoom_start = 12
+                m.zoom_start = 11
 
             st_folium(m, key="main_map", width=None, height=520, returned_objects=[], use_container_width=True)
 
