@@ -35,49 +35,6 @@ def load_data():
         cafe = pd.read_csv("dataset/음식점_카페_좌표추가.csv", encoding="utf-8").rename(columns={"X": "lon", "Y": "lat"})
         cafe["type"] = "음식점/카페"
 
-        natural = pd.read_csv("dataset/
-복사
-심층 연구
-요청이 중단되었습니다
-
-코드 이어서 계속 짜줘
-Copyimport streamlit as st
-import geopandas as gpd
-import pandas as pd
-import folium
-from folium.plugins import MarkerCluster
-from folium.features import DivIcon
-from shapely.geometry import Point
-import osmnx as ox
-import requests
-from streamlit_folium import st_folium
-import openai
-import math
-import os
-from urllib.parse import quote
-import io
-
-# ✅ 페이지 설정
-st.set_page_config(
-    page_title="제주온 - 제주도 맞춤형 AI기반 스마트 관광 가이드",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# ✅ 환경변수
-MAPBOX_TOKEN = st.secrets["MAPBOX_TOKEN"]
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-
-# ✅ 데이터 로드
-@st.cache_data
-def load_data():
-    try:
-        tour = pd.read_csv("dataset/관광업_좌표추가.csv", encoding="utf-8").rename(columns={"X": "lon", "Y": "lat"})
-        tour["type"] = "관광업"
-
-        cafe = pd.read_csv("dataset/음식점_카페_좌표추가.csv", encoding="utf-8").rename(columns={"X": "lon", "Y": "lat"})
-        cafe["type"] = "음식점/카페"
-
         natural = pd.read_csv("dataset/자연경관_좌표추가.csv", encoding="cp949").rename(columns={"X": "lon", "Y": "lat"})
         natural["type"] = "자연경관"
 
